@@ -1,228 +1,512 @@
-# 多 Agent 调度体系：思路与落地
+# 多 Agent 协作体系：从想法到落地的演进
 
-> 本文整理的是一套**工具无关**的思路，具体工具名称只作举例，你可以替换成自己拥有的任何 AI 工具。
-
----
-
-## 一、从单 Agent 到 Agent 军团
-
-大多数人使用 AI 编程工具的方式是：**一个对话，一件事**。遇到复杂任务时，要么等这个 Agent 慢慢做，要么换个工具重新来。
-
-这套体系解决的是另一个问题：**当你同时拥有多个 AI 工具时，怎么让它们协作，而不是各干各的。**
-
-触发这个想法的核心矛盾是：
-- 每个工具都有短板（配额有限、能力有上限、网络有依赖）
-- 每个工具也都有长板（token 量大、推理强、速度快）
-- 单独用任何一个，都是在用它的短板扛它不擅长的事
-
-**解法就是分工。**
+> 本文记录的是搭建多 AI 工具协作体系的**思考过程**——不是最终方案的说明书，而是一路走来的取舍和弯路。具体工具名称只作举例，思路本身不绑定任何特定工具。
 
 ---
 
-## 二、三个角色，缺一不可
+## 零、起点：一个人不够用了
 
-不管你用什么工具，一套完整的 Agent 军团需要覆盖三个角色：
+大多数人用 AI 编程工具的方式是：打开一个对话，做一件事。工具不够聪明就换一个，配额用完就等明天。
 
-### 角色 1：调度者（Dispatcher）
+问题出在你同时拥有多个 AI 工具的时候——每个都有明确的长板和短板：
 
-**职责**：唯一与用户实时对话的节点，负责理解需求、拆解任务、分发给其他 Agent、整合结果、向用户汇报。
+```mermaid
+block-beta
+  columns 4
+  space header1["优势"] header2["短板"] space:1
+  A["Cursor Agent\n（调度者）"] A1["实时交互\n理解需求"] A2["配额有限\n做重活快耗尽"] space:1
+  B["Claude Code\n（执行者）"] B1["token 量大\n可并行"] B2["非交互式\n不能实时对话"] space:1
+  C["Codex CLI\n（顾问）"] C1["推理最强\ngpt-5.4"] C2["依赖 VPN\n最贵最慢"] space:1
 
-**关键约束**：调度者不应该做重活。它的核心价值是理解、判断、协调，而不是执行。如果调度者陷入执行，就没有人负责全局视角了。
+  style A fill:#4A90D9,color:#fff
+  style B fill:#D4A843,color:#fff
+  style C fill:#7B68EE,color:#fff
+  style A1 fill:#E8F5E9
+  style B1 fill:#E8F5E9
+  style C1 fill:#E8F5E9
+  style A2 fill:#FFEBEE
+  style B2 fill:#FFEBEE
+  style C2 fill:#FFEBEE
+```
 
-**对应工具举例**：Cursor Agent、GitHub Copilot Chat、Claude.ai 对话窗口……任何能与你实时交互的 AI 界面。
+单独用任何一个，都会在某个维度上撞墙。**核心矛盾是：每个工具都有长板和短板，而你的任务不会只落在一个工具的舒适区里。**
+
+自然的想法：让它们分工。
 
 ---
 
-### 角色 2：执行者（Executor）
+## 一、第一版：写一个大 Rule，告诉 AI 该怎么分工
 
-**职责**：承接大量文件读取、批量修改、并行子任务、token 密集型工作。量大、可重复、逻辑明确的事情都给它做。
+最直觉的做法是写一个详细的全局规则（Rule），每次对话自动注入，告诉 Cursor：
 
-**关键特征**：
-- 支持非交互式调用（可以被程序驱动，不需要人盯着）
-- token 预算充裕（不怕长上下文）
-- 可以多实例并行
-- 结果写到文件，调度者只读摘要
+- 你有 cc 和 codex 两个帮手
+- 什么任务该派给谁
+- 怎么调用、怎么降级
 
-**对应工具举例**：Claude Code（接大 token 量 API）、Aider、任何有 CLI 的 AI coding 工具。
+第一版 Rule 写了几十行，包含角色定义、模型选择决策树、调用模板、降级策略……基本上把所有你能想到的东西都塞进去了。
+
+```mermaid
+flowchart LR
+  subgraph Rule["Rule（~80 行，每次对话都注入）"]
+    R1["角色定义"]
+    R2["模型选择决策树"]
+    R3["cc 调用模板"]
+    R4["codex 调用模板"]
+    R5["降级策略"]
+    R6["协作规范"]
+  end
+  User["每次对话"] --> Rule
+  Rule --> AI["AI 开始工作"]
+
+  style Rule fill:#FFEBEE,stroke:#C62828
+  style User fill:#E3F2FD
+  style AI fill:#E8F5E9
+```
+
+**问题马上来了：**
+
+### 问题 1：Rule 太长，每次对话都要消耗大量 token
+
+Rule 是每次对话都会注入的。写了 80 行的 Rule 意味着每次对话开头，AI 都要先"读"完这 80 行才开始干活。这些 token 大部分时候是浪费的——你 90% 的对话根本不需要协作。
+
+### 问题 2：AI 过度热心地分工
+
+Rule 里详细写了"什么任务该派给谁"，结果 AI 对着简单任务也开始分析"这个要不要派给 cc"。用户只是想改一行代码，AI 却先给你出了一个三方协作计划。
+
+### 问题 3：调用模板写在 Rule 里，改一次就要重新测试全局生效
+
+cc 的参数改了，或者 codex 的调用方式变了，你得去改 Rule。Rule 是全局的，改错了影响所有对话。
+
+**教训：Rule 应该极简。它是"基础认知"，不是"操作手册"。**
 
 ---
 
-### 角色 3：顾问（Consultant）
+## 二、第二版：拆分 Rule 和 Skill
 
-**职责**：处理需要深度推理的任务——复杂 bug 根因、架构决策、代码 review、方案对比。它是稀缺资源，只用在真正需要它的地方。
+解决第一版问题的思路是**分层**：
 
-**关键特征**：
-- 推理能力最强
-- 通常也最慢、最贵
-- 不应该承担机械执行任务
-- 输出的是判断和建议，而不是大量代码
+```mermaid
+flowchart LR
+  User["每次对话"] --> Rule["Rule（~10 行）\n基础认知 + 路由"]
+  Rule -->|需要协作时| Skill["Skill（按需加载）\n调用模板 / 参数 / 降级"]
+  Rule -->|不需要时| AI["AI 直接工作"]
+  Skill --> AI
 
-**对应工具举例**：OpenAI Codex CLI（gpt-5.4）、o3、任何以推理见长的模型。
+  style Rule fill:#E8F5E9,stroke:#2E7D32
+  style Skill fill:#FFF3E0,stroke:#E65100
+  style User fill:#E3F2FD
+  style AI fill:#E8F5E9
+```
+
+- **Rule（~10 行）**：只放最基本的认知——"你有 cc 和 codex 两个帮手，用户说用 cc 时调 cc，说用 codex 时调 codex"。每次对话都加载，但成本极低。
+- **Skill（按需加载）**：完整的调用模板、参数说明、降级策略写成 Skill 文档，只有需要时才读取。
+
+这解决了 token 浪费和模板维护的问题。但还剩一个核心问题：**什么时候该走完整的协作流程？**
+
+如果让 AI 自己判断"这个任务需不需要多方协作"，它判断得并不好。有时候简单任务被过度拆解，有时候复杂任务它直接自己做了。
+
+**教训：不要让 AI 判断"是否需要协作"。这个决定应该由用户来做。**
 
 ---
 
-## 三、核心调度原则
+## 三、第三版：用户触发协作（/army 命令）
 
-### 原则 1：调度者保护自己的配额
+关键转折点是一个设计原则的确立：**协作是按需触发的，不是默认行为。**
 
-调度者的配额往往是最稀缺的（因为要实时响应用户）。所以：
+```mermaid
+flowchart TD
+  User["用户输入"] --> Check{"入口判断"}
+  Check -->|普通请求| Self["Cursor 自己做"]
+  Check -->|"用 cc 干 xxx"| CC["直接调 cc\n不需要确认"]
+  Check -->|"用 codex 干 xxx"| Codex["直接调 codex\n不需要确认"]
+  Check -->|"/army"| Plan["完整协作流程"]
 
-- 量大的任务派给执行者，执行者写文件，调度者只读摘要
-- 调度者不直接处理大体量输出，避免 token 消耗在无效传递上
-- 纯执行任务时，调度者"发号施令 + 验收结果"，不亲自操刀
+  Plan --> Step1["1. 分析任务"]
+  Step1 --> Step2["2. 出分工计划"]
+  Step2 --> Step3["3. 等用户确认"]
+  Step3 --> Step4["4. 执行"]
 
-### 原则 2：顾问是稀缺资源，只用在刀刃上
-
-顾问强，但贵、慢、有配额限制。调度原则：
-
-- 机械的事不给顾问做（浪费）
-- 推理密集的事不给执行者做（做不好）
-- 高风险操作先让顾问出方案，再让执行者按检查点执行
-
-### 原则 3：完整的降级链路
-
-任何一方不可用时，系统不应该崩溃：
-
-```
-顾问不可用（网络/配额）→ 执行者 --effort high  或  调度者自己做
-执行者不可用            → 调度者自己做，或换其他执行渠道
-调度者配额紧张          → 把更多工作推给执行者，自己只做最终判断
+  style Check fill:#FFF9C4,stroke:#F57F17
+  style Self fill:#E8F5E9
+  style CC fill:#FFF3E0
+  style Codex fill:#F3E5F5
+  style Plan fill:#E3F2FD
+  style Step3 fill:#FFCDD2,stroke:#C62828
 ```
 
-降级不是异常处理，是系统设计的一部分。
+**为什么不让 AI 自动路由？** 因为用户对"这个任务值不值得多方协作"有自己的判断。自动路由带来的便利不如它造成的意外多——用户不知道 AI 什么时候会突然启动一个复杂的协作流程。明确的触发机制让用户有预期。
 
-### 原则 4：协作文件是系统的胶水
+一个完整的 `/army` 调用看起来像这样：
 
-多 Agent 协作最大的隐患是"交接失灵"——一个 Agent 做完，下一个不知道发生了什么。
+```
+[用户]  /army 重构 utils.py 中的日期处理函数
 
-解法是**规范化协作文件**：
+[Cursor] 分析任务 → 输出分工计划表 → 等用户确认
 
-- 所有中间产物写到项目内固定目录（如 `_agent_work/`），不用临时目录
-- 文件名带日期/任务 ID，重跑不覆盖历史
-- 交接文件有固定结构：做了什么 / 哪些是推断 / 未解决的问题 / 建议下一步
+[用户]  确认
 
-这样每个 Agent 交接给下一个时，都有据可查，而不是靠自然语言"口耳相传"。
+[Cursor] 写任务描述到 _agent_work/plans/refactor-date-20260404.md
+[Cursor] 调用 cc：读 plans/... 执行重构
+[cc]    执行完成，结果写到 _agent_work/context/cc-refactor-20260404.md
+
+[Cursor] 读摘要，调用 codex review 未提交改动
+[codex]  review 结果写到 _agent_work/reviews/codex-review-20260404.md
+
+[Cursor] 读 review 摘要，向用户汇报
+```
+
+注意调度者（Cursor）全程只读摘要，不直接消费大段输出。
 
 ---
 
-## 四、任务路由：怎么决定派给谁
+## 四、Skill 也太长了：子文档拆分
 
-不要按"任务类型"路由（容易模糊），要按**四个维度**综合判断：
+Skill 解决了 Rule 太长的问题，但 Skill 本身也会变长。当 cc 的调用模板、codex 的调用模板、协作文件规范、交接模板都放在同一个 SKILL.md 里时，它又变成了一个几百行的大文件。
 
-| 维度 | 说明 |
-|---|---|
-| **推理强度** | 是否需要根因分析、方案权衡、review 判断 |
-| **执行规模** | 文件数量、命令数量、并行度、上下文长度 |
-| **失败代价** | 改坏后是否难回滚（数据库迁移、生产配置、批量删除） |
-| **可验证性** | 能否用测试/lint/diff 明确判断对错 |
+而实际使用中，不同场景需要的信息不同：
 
-常见组合：
+```mermaid
+flowchart TD
+  Entry{"触发方式"} -->|"/army"| Main["SKILL.md（主文件）\n协作流程 / 路由 / 编排"]
+  Entry -->|"用 cc 干 xxx"| CCRef["cc-reference.md\n调用模板 / 参数 / effort"]
+  Entry -->|"用 codex 干 xxx"| CodexRef["codex-reference.md\n调用模板 / 模型选择"]
 
-| 推理强度 | 执行规模 | 失败代价 | → 派给 |
-|---|---|---|---|
-| 低 | 大 | 低 | 执行者 |
-| 低 | 小 | 低 | 调度者自己做 |
-| 高 | 任意 | 任意 | 顾问 |
-| 低 | 任意 | 高 | 顾问先出方案，执行者按检查点执行 |
-| 高，但可快速验证 | 小 | 低 | 执行者探路，顾问审核 |
+  Main -->|"需要调 cc"| CCRef
+  Main -->|"需要调 codex"| CodexRef
+  Main -->|"多方协作"| Collab["collaboration.md\n文件规范 / 交接模板"]
+
+  style Entry fill:#FFF9C4,stroke:#F57F17
+  style Main fill:#E3F2FD,stroke:#1565C0
+  style CCRef fill:#FFF3E0,stroke:#E65100
+  style CodexRef fill:#F3E5F5,stroke:#6A1B9A
+  style Collab fill:#E8F5E9,stroke:#2E7D32
+```
+
+主文件始终加载，子文档按需引用。这样 token 消耗和信息精度都得到了优化。
 
 ---
 
-## 五、推荐编排模式
+## 五、协作文件：最容易被忽略的胶水
 
-把常见任务类型固化成流水线，而不是每次临时决定：
+多 Agent 协作有一个隐蔽但致命的问题：**交接失灵**。
 
-**模式 A：批量执行**
-```
-调度者决策 → 执行者批量执行 → 调度者验收
-```
-适合：大范围重构、批量重命名、生成文档、写测试
+A 做完了，B 不知道 A 做了什么。Cursor 给 cc 派了任务，cc 把结果写到一个临时地方，Cursor 找不到。或者 cc 的输出直接回传给 Cursor，几千字的内容把 Cursor 的 token 消耗殆尽。
 
-**模式 B：复杂改动**
-```
-执行者读上下文 → 顾问定方案 → 执行者落地 → 顾问 review
-```
-适合：需要先理解全貌再做决策的改动
+下面这个序列图展示了**正确的**协作文件流转方式：
 
-**模式 C：小改 + 把关**
-```
-调度者小改 → 顾问 review
-```
-适合：小功能、bugfix，但改动敏感需要二次确认
+```mermaid
+sequenceDiagram
+  participant U as 用户
+  participant C as Cursor（调度者）
+  participant CC as cc（执行者）
+  participant X as codex（顾问）
 
-**模式 D：高风险操作**
+  U->>C: /army 重构这个模块
+  C->>C: 分析任务，写分工计划
+  C-->>U: 展示计划，等确认
+  U->>C: 确认
+
+  Note over C: 任务描述 > 5 行<br/>写到 _agent_work/plans/
+
+  C->>CC: 读 plans/xxx.md 执行
+  CC->>CC: 执行任务
+  CC-->>CC: 结果写到 _agent_work/context/
+
+  C->>C: 只读摘要（保护 token）
+
+  C->>X: review 未提交的改动
+  X-->>X: 结果写到 _agent_work/reviews/
+
+  C->>C: 读 review 摘要
+  C-->>U: 汇报结果
 ```
-顾问出方案和检查点 → 执行者逐检查点执行 → 顾问验收
+
+### 第一层：固定目录 + 命名规范
+
+所有协作中间产物写到项目内的 `_agent_work/` 目录：
+
 ```
-适合：数据库迁移、架构重构、破坏性变更
+_agent_work/
+├── context/    # 上下文搜集结果
+├── plans/      # 分工计划和方案
+├── reviews/    # review 结果
+└── logs/       # 执行日志
+```
+
+文件名带日期和任务标识，不会互相覆盖。这个目录不加 `.gitignore`——它本身就是协作的活文档，值得被追踪。
+
+**目录初始化**：调度者在首次派发任务时自动 `mkdir -p _agent_work/{context,plans,reviews,logs}`。不需要用户手动创建，也不需要预先存在——每次调用前确保目录在就行。
+
+### 第二层：长任务描述写成文档
+
+实际使用中发现一个模式：当你给 cc 或 codex 的任务描述超过 5 行时，直接放在命令行参数里不现实，也不可追溯。
+
+更好的做法是：先把任务描述写到 `_agent_work/plans/` 下的一个 Markdown 文件里，然后让 cc/codex 去读这个文件执行。好处是：
+- 任务描述有版本记录
+- Cursor 自己不需要在 prompt 里塞大量文本
+- 下次遇到类似任务可以复用
+
+"5 行"是经验法则，不是硬性阈值。核心判断标准是：命令行里塞不塞得下、事后能不能追溯。
+
+### 第三层：并行编排
+
+当任务可以拆成互不依赖的子任务时，多个 cc/codex 实例可以并行跑。关键约束：**每个实例写独立文件，禁止并行写同一文件。**
+
+```mermaid
+sequenceDiagram
+  participant C as Cursor（调度者）
+  participant CC1 as cc 实例 1
+  participant CC2 as cc 实例 2
+  participant X as codex
+
+  C->>CC1: review 文件 A → 写 reviews/cc-fileA-0404.md
+  C->>CC2: review 文件 B → 写 reviews/cc-fileB-0404.md
+  C->>X: review 文件 C → 写 reviews/codex-fileC-0404.md
+
+  CC1-->>C: 完成
+  CC2-->>C: 完成
+  X-->>C: 完成
+
+  C->>C: 读取三份 review，汇总呈现
+```
+
+### 第四层：失败处理
+
+工具调用不总是成功的。常见失败场景和应对：
+
+| 失败场景 | 表现 | 应对 |
+|---|---|---|
+| codex 网络不通 | 可用性检测返回 `codex_unavail` | 降级到 cc `--effort high` 或 Cursor 自己做 |
+| cc/codex 超时 | 后台进程长时间无输出 | 设合理 timeout，超时后检查产物文件是否已写入 |
+| 输出文件为空或格式异常 | 文件存在但内容不符合预期 | 调度者检查文件大小，异常时重试或降级 |
+| 并行实例部分失败 | 部分文件写入、部分缺失 | 汇总已有结果，对失败任务单独重试 |
+
+原则是：**调用前检测，执行后验收，失败时降级。** 不要假设每次调用都成功。
 
 ---
 
-## 六、让系统持久化：不依赖记忆
+## 六、让工具 review 自己
 
-这套体系最容易失效的地方是：**每次新对话，AI 都不记得你有这些工具，不记得分工原则。**
+体系搭到这里，一个有趣的可能性出现了：**让 cc 和 codex 分别 review 这套体系本身。**
 
-解法是把分工知识写进工具的持久配置：
+```mermaid
+flowchart TD
+  Input["Rule + Skill + 协作规范\n（作为上下文）"]
 
-- **全局规则（Rule）**：在 AI 工具的设置里写入分工原则，每次对话自动注入。对应 Cursor 的 Rules for AI、Copilot 的 System Prompt 等。
-- **技能文件（Skill）**：把调用其他工具的 CLI 命令、参数模板、降级策略写成文档，调度者需要时读取。
-- **版本管理**：把这些配置文件放进 git 仓库，改动有记录，多机器可同步。
+  Input --> CC["cc review\n（执行者视角）"]
+  Input --> Codex["codex review\n（顾问视角）"]
+
+  CC --> CCOut["关注工程化\n接口统一 / 错误处理 / 输出规范"]
+  Codex --> CodexOut["关注系统性\n一致性 / 风险分级 / 验证闭环"]
+
+  CCOut --> Merge["调度者（用户）\n筛选 · 取舍 · 整合"]
+  CodexOut --> Merge
+
+  Merge --> Adopt["采纳\n落地改进"]
+  Merge --> NotAdopt["不采纳\n记录到 not-adopted.md\n留档备查"]
+
+  style Input fill:#E3F2FD
+  style CC fill:#FFF3E0
+  style Codex fill:#F3E5F5
+  style Merge fill:#FFF9C4,stroke:#F57F17
+  style Adopt fill:#E8F5E9,stroke:#2E7D32
+  style NotAdopt fill:#FFEBEE,stroke:#C62828
+```
+
+实际效果：
+- cc 更关注工程化——接口统一、错误处理、输出规范
+- codex 更关注系统性——一致性、风险分级、验证闭环
+- 两者互补，比你自己想要全面得多
+
+但也要注意：**不是所有建议都应该采纳。** 我们收到了结构化任务输入（JSON 模板）、错误码体系、权限三级细分、用量阈值自动调度等建议。逐一评估后，大部分"过度工程化"的建议被搁置——当前阶段，简单可用比架构完美重要。这些被搁置的建议和理由都记录在 `not-adopted.md` 里，作为未来的参考。
 
 ---
 
-## 七、让工具互相 review
+## 七、反模式：踩过的坑
 
-这套体系成熟后，可以做一件有趣的事：**让各个工具对系统本身提建议**。
+```mermaid
+flowchart LR
+  subgraph 坑["常见反模式"]
+    direction TB
+    P1["🚫 AI 自动判断是否协作\n简单任务被过度拆解"]
+    P2["🚫 Rule 塞太多内容\n90% 对话在为不需要的功能付 token"]
+    P3["🚫 协作文件写 /tmp/\n不可追溯，重启丢失"]
+    P4["🚫 调度者直接消费大输出\n快速耗尽 token"]
+    P5["🚫 并行实例写同一文件\n互相覆盖"]
+    P6["🚫 不检测就调用 codex\n VPN 断了 → 莫名失败"]
+    P7["🚫 分工原则只在对话里\n新对话全忘"]
+    P8["🚫 只有成功路径\n失败了不知道怎么办"]
+    P9["🚫 依赖 -o 捕获完整输出\n实际只拿到最后一条消息"]
+  end
 
-具体做法：
-1. 把你的调度规则、配置文件作为上下文
-2. 分别向执行者（"从你作为执行方的视角"）和顾问（"从深度推理/review 的视角"）征询建议
-3. 收集两份意见，调度者负责取舍、整合、落地
+  subgraph 解["正确做法"]
+    direction TB
+    S1["✅ 用户用 /army 触发"]
+    S2["✅ Rule ≤ 10 行"]
+    S3["✅ 写到项目内 _agent_work/"]
+    S4["✅ cc 写文件，Cursor 读摘要"]
+    S5["✅ 并行任务写独立文件"]
+    S6["✅ 调用前做健康检测"]
+    S7["✅ 写进 Rule/Skill 持久化"]
+    S8["✅ 调用前检测 · 执行后验收 · 失败时降级"]
+    S9["✅ 在 prompt 里要求工具写文件"]
+  end
 
-执行者更关注接口工程化、输出规范、错误处理；顾问更关注系统一致性、风险分级、验证闭环。两者互补，比你自己想要全面得多。
+  P1 --> S1
+  P2 --> S2
+  P3 --> S3
+  P4 --> S4
+  P5 --> S5
+  P6 --> S6
+  P7 --> S7
+  P8 --> S8
+  P9 --> S9
+
+  style 坑 fill:#FFEBEE,stroke:#C62828
+  style 解 fill:#E8F5E9,stroke:#2E7D32
+```
 
 ---
 
-## 八、反模式：这些坑要避开
+## 八、最终架构：三层分离
 
-**坑 1：把顾问当第二个执行器**
-顾问推理强但慢贵，让它做批量文件通读、机械重构是浪费。它应该是审稿人，不是搬砖工。
+经过上述演进，最终形成的架构是三层分离：
 
-**坑 2：协作文件写到临时目录**
-`/tmp/` 或等价的临时目录，用户看不到，AI 出错时无法追溯，重启后消失。协作文件必须在项目目录内。
+```mermaid
+flowchart TD
+  subgraph Layer1["Layer 1: Rule（每次对话自动注入）"]
+    Rule["ai-dispatch.mdc\n~10 行：基础认知 + 路由"]
+  end
 
-**坑 3：调度者直接消费大输出**
-执行者输出了 5000 字，调度者全部读入处理，这会快速耗尽调度者的 token。正确做法是让执行者写文件、调度者只读摘要。
+  subgraph Layer2["Layer 2: Command（用户主动触发）"]
+    Cmd["/army\n指向 Skill，启动协作流程"]
+  end
 
-**坑 4：多实例并行写同一文件**
-并行的执行者实例互相覆盖对方的输出。并行任务必须写独立文件，由单线程汇总。
+  subgraph Layer3["Layer 3: Skill（按需加载）"]
+    Main["SKILL.md\n协作流程 / 路由 / 编排"]
+    Sub1["cc-reference.md"]
+    Sub2["codex-reference.md"]
+    Sub3["collaboration.md"]
+    Main -.-> Sub1
+    Main -.-> Sub2
+    Main -.-> Sub3
+  end
 
-**坑 5：分工原则只存在对话里**
-每次新对话都要重新解释分工，这不是持久化的体系，只是临时约定。
+  subgraph Layer4["Layer 4: _agent_work/（协作产物）"]
+    AW1["context/ — 上下文搜集"]
+    AW2["plans/ — 分工计划"]
+    AW3["reviews/ — review 结果"]
+    AW4["logs/ — 执行日志"]
+  end
 
-**坑 6：不检测工具可用性就调用**
-顾问依赖特殊网络条件时，不检测直接调用会得到难以理解的失败。调用前先做健康检测，失败了走降级路径。
+  User["用户对话"] --> Rule
+  Rule -->|"用 cc/codex"| Layer3
+  User -->|"/army"| Cmd
+  Cmd --> Main
+  Layer3 -->|"读写中间产物"| Layer4
+
+  style Layer1 fill:#E8F5E9,stroke:#2E7D32
+  style Layer2 fill:#E3F2FD,stroke:#1565C0
+  style Layer3 fill:#FFF3E0,stroke:#E65100
+  style Layer4 fill:#F3E5F5,stroke:#6A1B9A
+  style User fill:#F5F5F5
+```
+
+设计原则：
+- 每次对话必付的成本（Rule）降到最低
+- 偶尔需要的能力（Skill）按需加载
+- 用户控制协作时机（Command），AI 不自作主张
+- 协作产物有固定归属（`_agent_work/`），交接不失灵
 
 ---
 
 ## 九、从零搭建的步骤
 
-1. **盘点你有什么工具**：哪个能实时交互（调度者）、哪个 token 多（执行者）、哪个推理强（顾问）
-2. **写分工规则**：放进调度者工具的全局配置，让它每次对话都知道分工
-3. **封装调用命令**：把执行者和顾问的调用方式写成速查文档，调度者按需读取
-4. **约定协作目录**：项目内建 `_agent_work/`，所有中间文件写这里
-5. **定义交接模板**：多工具串行时，每个产物有固定结构
-6. **设计降级链路**：每个工具不可用时怎么处理，提前想好
-7. **用工具 review 自己**：让执行者和顾问对这套体系本身提建议，持续迭代
+如果你也想搭一套类似的体系，先确认前置条件：
+- 至少两个 AI 编程工具已安装可用（一个交互式、一个可 CLI 调用）
+- 工具的 API Key / 账号已配置好
+- 如有工具依赖网络代理（如 VPN），确保代理可用
+
+然后按以下步骤推进：
+
+```mermaid
+flowchart TD
+  S1["1. 盘点工具\n谁能交互？谁 token 多？谁推理强？"]
+  S2["2. 写极简 Rule\n≤ 10 行，只放认知 + 路由"]
+  S3["3. 做协作入口\n定义 /army 命令，不触发不消耗"]
+  S4["4. 写 Skill 文档\n主文件 + 子文档，按需加载"]
+  S5["5. 约定协作目录\n_agent_work/，不用临时目录"]
+  S6["6. 设计降级链路\n每个工具挂了怎么办"]
+  S7["7. 让工具 review 自己\n执行者 + 顾问双视角"]
+  S8["8. 记录不采纳的建议\n留档备查，未来可能有用"]
+
+  S1 --> S2 --> S3 --> S4 --> S5 --> S6 --> S7 --> S8
+
+  style S1 fill:#E3F2FD
+  style S2 fill:#E8F5E9
+  style S3 fill:#E3F2FD
+  style S4 fill:#FFF3E0
+  style S5 fill:#E8F5E9
+  style S6 fill:#FFEBEE
+  style S7 fill:#F3E5F5
+  style S8 fill:#FFF9C4
+```
 
 ---
 
 ## 十、总结
 
-这套体系本质上是把**软件工程的分层思想**搬到了 AI 工具的使用方式上：
+这套体系的本质是把**软件工程的分层思想**搬到 AI 工具的使用方式上：
 
-- 调度者 ≈ 产品经理/项目负责人：理解需求、拆解、协调、汇报
-- 执行者 ≈ 开发团队：量大、能并行、按指令做
-- 顾问 ≈ 技术专家/评审：少而精，只用在真正需要判断的地方
+```mermaid
+flowchart LR
+  subgraph 软件工程类比
+    PM["产品经理\n理解需求 · 拆解 · 协调"]
+    Dev["开发团队\n量大 · 能并行 · 按指令做"]
+    Expert["技术专家\n少而精 · 深度判断"]
+  end
 
-每个角色专注自己擅长的事，通过标准化的协作文件交接，形成一个比任何单个 Agent 都强的系统。
+  subgraph Agent 军团
+    Cursor["调度者\nCursor Agent"]
+    CC["执行者\nClaude Code"]
+    Codex["顾问\nCodex CLI"]
+  end
+
+  PM ---|"≈"| Cursor
+  Dev ---|"≈"| CC
+  Expert ---|"≈"| Codex
+
+  style PM fill:#E3F2FD
+  style Dev fill:#FFF3E0
+  style Expert fill:#F3E5F5
+  style Cursor fill:#E3F2FD,stroke:#1565C0
+  style CC fill:#FFF3E0,stroke:#E65100
+  style Codex fill:#F3E5F5,stroke:#6A1B9A
+```
+
+演进过程的核心取舍：
+
+```mermaid
+timeline
+  title 架构演进时间线
+  V1 : 全写在 Rule 里
+     : 直觉最简单
+     : ❌ 太长，AI 过度热心
+  V2 : Rule + Skill 分层
+     : 解决 token 浪费
+     : ❌ AI 判断协作时机不靠谱
+  V3 : 加 /army 命令
+     : 用户控制协作时机
+     : ❌ Skill 又太长了
+  V4 : Skill 拆子文档
+     : 按需加载
+     : ❌ 交接失灵
+  V5 : 协作文件规范化
+     : _agent_work/ 固定目录
+     : ❌ 只有成功路径
+  V6 : 补齐失败处理与并行编排
+     : 检测→执行→验收→降级
+     : ✅ 当前架构
+```
+
+每一步都是在解决上一步暴露的问题。没有一开始就设计好的完美架构——都是用出来的。

@@ -1,5 +1,5 @@
 #!/bin/bash
-# 将 rules 和 skills 安装到 ~/.cursor/
+# 将 rules、commands、skills 安装到 ~/.cursor/
 
 set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -33,19 +33,25 @@ mkdir -p ~/.cursor/rules
 cp "$SCRIPT_DIR/rules/ai-dispatch.mdc" ~/.cursor/rules/
 echo "    ~/.cursor/rules/ai-dispatch.mdc"
 
+echo "==> 安装 commands..."
+mkdir -p ~/.cursor/commands
+for cmd_file in "$SCRIPT_DIR/commands"/*.md; do
+    [ -f "$cmd_file" ] || continue
+    cp "$cmd_file" ~/.cursor/commands/
+    echo "    ~/.cursor/commands/$(basename "$cmd_file")"
+done
+
 echo "==> 安装 skills..."
 mkdir -p ~/.cursor/skills
 for skill_dir in "$SCRIPT_DIR/skills"/*/; do
     skill_name=$(basename "$skill_dir")
     mkdir -p ~/.cursor/skills/"$skill_name"
-    replace_placeholder "$skill_dir/SKILL.md" ~/.cursor/skills/"$skill_name"/SKILL.md
-    echo "    ~/.cursor/skills/$skill_name/SKILL.md"
+    for md_file in "$skill_dir"*.md; do
+        [ -f "$md_file" ] || continue
+        replace_placeholder "$md_file" ~/.cursor/skills/"$skill_name"/$(basename "$md_file")
+        echo "    ~/.cursor/skills/$skill_name/$(basename "$md_file")"
+    done
 done
 
 echo ""
 echo "完成。"
-echo ""
-echo "还需手动操作："
-echo "  1. 将 cursor-settings-rules.txt 中的内容粘贴到:"
-echo "     Cursor → Settings → Rules for AI"
-echo "  2. 手动替换 cursor-settings-rules.txt 中的 <CC_PATH> 为: $CC_PATH"
