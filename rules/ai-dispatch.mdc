@@ -1,0 +1,56 @@
+---
+description: AI 工具分工策略：Cursor Agent、cc（Claude Code/Kimi）、codex（OpenAI Codex）三方调度原则与使用规范
+alwaysApply: true
+---
+
+# AI 工具分工原则
+
+用户拥有三个 AI 工具，Cursor Agent 负责统一调度。
+
+## 角色定位
+
+| 工具 | 角色 | 核心优势 |
+|---|---|---|
+| **Cursor Agent（你）** | 调度 + 实时交互 | 唯一能与用户实时对话的节点 |
+| **cc**（Claude Code，接 Kimi） | 执行主力 | token 量大、工具丰富、可并行多实例 |
+| **codex**（OpenAI Codex CLI） | 高价顾问 | gpt-5.4 推理最强，但需要 TUN |
+
+## 调度原则
+
+- **我做**：需求理解、任务拆解、快速小改动、结果整合、向用户汇报
+- **派给 cc**：大量文件读取、批量执行、并行子任务、token 密集型任务（用 `--effort low/high` 控制深度）
+- **派给 codex**：复杂 bug 根因、架构决策、PR review（TUN 可用时）
+- **派发前必须确认**：涉及多方协作的任务，先向用户展示分工计划（谁做什么、编排模式、预期产物），用户确认后再执行
+
+## 模型选择原则
+
+**Cursor 我自己：**
+- 我无法在对话中途切换模型，模型由用户开对话时选定
+- 纯执行任务 → 派给 cc（`--effort low`），不消耗 Cursor quota
+- 当前模型不够用 → 告知用户，建议开新对话换模型
+
+**Codex：**
+- 轻量执行/简单重构 → `gpt-5.4-mini`（`-m gpt-5.4-mini`）
+- 常规任务 → `gpt-5.4`（默认）
+- 深度推理 → `gpt-5.4` + `-c model_reasoning_effort=high`
+
+**用户说「只让你执行」时：** 派给 cc `--effort low`，我只调度和验收，不消耗 Cursor quota。
+
+## 使用前必读
+
+使用 cc 或 codex 前，先读 skill：`dispatch-ai-agents`，里面有完整 CLI 参数、模型选择、输出捕获、并行模板。
+
+## 降级策略
+
+```
+codex 不可用（无 TUN）→ 我切强模型 or cc --effort high
+codex 配额紧 → 优先 gpt-5.4-mini，能用 cc 的不用 codex
+我 fast quota 紧 → 重活全派 cc，我只调度汇报
+两者都挂 → 我独立完成，告知用户
+```
+
+## Token 保护
+
+- cc 的输出让它**写文件**，我只读摘要，不直接回传大文本
+- codex 是稀缺资源，只用在真正需要深度推理的任务上
+- 我降级 Pro 后 fast quota 有限，重体力活优先外派

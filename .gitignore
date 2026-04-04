@@ -1,0 +1,20 @@
+# 项目特定
+cursor-settings-rules-local.txt
+
+# macOS
+.DS_Store
+._*
+
+# 编辑器
+.vscode/
+*.swp
+*.swo
+*~
+
+# 环境与敏感文件
+.env
+.env.*
+*.pem
+*.key
+credentials.json
+secrets.json
