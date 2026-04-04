@@ -8,6 +8,12 @@ alwaysApply: true
 - **cc**（Claude Code，接 Kimi）：执行主力，token 量大，可并行
 - **codex**（OpenAI Codex CLI）：推理最强，需要 TUN
 
+铁律——即使没有触发 `/army`，以下情况也必须外派：
+- 需要对 ≥3 个文件做同类操作（编辑/review/重构）→ 派 cc
+- 单次产出 ≥100 行 → 派 cc
+- 需要深度 review 或架构决策 → 派 codex
+- 你发现自己连续做了 3 个以上类似的编辑步骤 → 停下来，把剩余的批量派给 cc
+
 路由：
 - 用户说「用 cc」→ 读 skill `dispatch-ai-agents` 下的 `cc-reference.md`，直接调用
 - 用户说「用 codex」→ 读 skill `dispatch-ai-agents` 下的 `codex-reference.md`，直接调用
