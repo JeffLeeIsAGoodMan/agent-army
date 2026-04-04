@@ -39,7 +39,9 @@
 - cc 的输出让它写文件，Cursor 只读摘要（保护 Cursor quota）
 - codex 是稀缺资源，只用在真正需要 gpt-5.4 推理的任务上
 - 用户说「只让你执行」→ 全派 cc，Cursor 只验收
-- 多方协作任务派发前，必须先展示分工计划，用户确认后再执行
+- 多方协作任务派发前，必须先展示分工计划（写到 `_agent_work/plans/`），用户确认后再执行
+- 涉及 ≥ 3 个文件的修改视为批量任务，应派给 cc 而非 Cursor 自己做
+- 多方协作完成后，写执行日志到 `_agent_work/logs/`
 
 ---
 
@@ -138,7 +140,7 @@ agent-army/
 ├── docs/
 │   ├── concept.md                   # 多 Agent 调度体系思路（工具无关）
 │   └── not-adopted.md               # 暂不采纳的建议留档
-└── _agent_work/                     # 协作中间文件（cc/codex 输出）
+└── _agent_work/                     # 协作中间文件（cc/codex 输出，本仓库保留实际示例）
     ├── context/                     # 上下文摘要
     ├── plans/                       # 分工计划、方案和检查点
     ├── reviews/                     # review 结果
@@ -164,3 +166,4 @@ bash install.sh
 - [ ] 自动调度脚本：根据任务描述自动判断派给谁
 - [ ] 用量监控：低于阈值时自动切换策略
 - [ ] 更多 skill：babysit（PR 看护）、create-rule、create-skill 等迁移管理
+- [ ] codex `-o` 输出捕获不完整的问题（review 内容只有摘要，完整内容在 stdout）
