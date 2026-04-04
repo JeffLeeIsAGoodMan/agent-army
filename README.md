@@ -159,6 +159,7 @@ agent-army/
 │       └── SKILL.md                 # 三方用量查看
 ├── docs/
 │   ├── concept.md                   # 多 Agent 调度体系思路（工具无关）
+│   ├── test-scenarios.md            # 分工测试任务集（迭代验证用）
 │   ├── not-adopted.md               # 暂不采纳的建议留档
 │   └── roadmap.md                   # 演进路线图
 └── _agent_work/                     # 协作中间文件（cc/codex 输出，本仓库保留实际示例）
@@ -177,6 +178,18 @@ bash install.sh
 ```
 
 自动安装 rules、commands、skills 到 `~/.cursor/`。
+
+---
+
+## 测试与迭代
+
+改完规则/skill 后，用标准测试任务集验证分工是否达标：
+
+```
+改规则 → 跑 2-3 个测试任务（/army 触发，只看计划） → 记录分工占比 → 对比期望 → 继续改
+```
+
+核心指标：**Cursor 自己做的步骤 ≤ 40%**。详见 [docs/test-scenarios.md](docs/test-scenarios.md)。
 
 ---
 
