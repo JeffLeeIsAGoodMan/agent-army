@@ -54,3 +54,9 @@ codex 配额紧 → 优先 gpt-5.4-mini，能用 cc 的不用 codex
 - cc 的输出让它**写文件**，我只读摘要，不直接回传大文本
 - codex 是稀缺资源，只用在真正需要深度推理的任务上
 - 我降级 Pro 后 fast quota 有限，重体力活优先外派
+
+## Ignore
+
+- 不要主动读取或修改 `_agent_work/` 目录下的文件，除非任务明确要求
+- 忽略 `.git/`、`node_modules/`、`.venv/`、`__pycache__/` 等目录
+- 忽略 `.env`、`credentials.json` 等含敏感信息的文件

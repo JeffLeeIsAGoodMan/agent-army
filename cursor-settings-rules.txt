@@ -27,5 +27,10 @@
 - 我 quota 紧 → 重活全派 cc，我只调度汇报
 - 用户说「只让你执行」→ 派给 cc，我验收
 
+## Ignore
+- 不要主动读取或修改 `_agent_work/` 目录下的文件，除非任务明确要求
+- 忽略 `.git/`、`node_modules/`、`.venv/`、`__pycache__/` 等目录
+- 忽略 `.env`、`credentials.json` 等含敏感信息的文件
+
 ## 详细调用参考
 skill: dispatch-ai-agents

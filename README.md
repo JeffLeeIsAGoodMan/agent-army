@@ -39,6 +39,7 @@
 - cc 的输出让它写文件，Cursor 只读摘要（保护 Cursor quota）
 - codex 是稀缺资源，只用在真正需要 gpt-5.4 推理的任务上
 - 用户说「只让你执行」→ 全派 cc，Cursor 只验收
+- 多方协作任务派发前，必须先展示分工计划，用户确认后再执行
 
 ---
 
@@ -123,8 +124,10 @@ codex review --uncommitted < /dev/null
 ```
 agent-army/
 ├── README.md                        # 本文件
+├── .gitignore                       # Git 忽略规则
 ├── install.sh                       # 一键安装到 ~/.cursor/
-├── cursor-settings-rules.txt        # 粘贴到 Cursor Settings → Rules for AI
+├── cursor-settings-rules.txt        # 粘贴到 Cursor Settings → Rules for AI（含 <CC_PATH> 占位符）
+├── cursor-settings-rules-local.txt  # 本地版（已替换路径 + Ignore 规则，不提交）
 ├── rules/
 │   └── ai-dispatch.mdc              # 全局规则（alwaysApply）
 ├── skills/
@@ -135,9 +138,9 @@ agent-army/
 ├── docs/
 │   ├── concept.md                   # 多 Agent 调度体系思路（工具无关）
 │   └── not-adopted.md               # 暂不采纳的建议留档
-└── _agent_work/                     # 协作中间文件（cc/codex 输出，按需 commit）
+└── _agent_work/                     # 协作中间文件（cc/codex 输出）
     ├── context/                     # 上下文摘要
-    ├── plans/                       # 方案和检查点
+    ├── plans/                       # 分工计划、方案和检查点
     ├── reviews/                     # review 结果
     └── logs/                        # 执行日志
 ```

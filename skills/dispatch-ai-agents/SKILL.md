@@ -46,6 +46,16 @@ curl -s --max-time 3 https://api.openai.com > /dev/null 2>&1 && \
 
 ---
 
+## 派发前确认（铁律）
+
+涉及多方协作的任务，**必须先向用户展示分工计划，用户确认后再执行**。
+
+计划内容至少包含：谁做什么、用什么编排模式、预期产物路径。
+
+计划本身写到 `_agent_work/plans/`，命名格式同协作文件规范：`cursor-<任务简述>-<YYYYMMDD>.md`。
+
+---
+
 ## 推荐编排模式
 
 | 模式 | 适用场景 | 流程 |
@@ -66,9 +76,9 @@ curl -s --max-time 3 https://api.openai.com > /dev/null 2>&1 && \
 ```
 _agent_work/
 ├── context/    # cc 搜集的上下文摘要、项目分析
-├── plans/      # codex 出的方案、检查点
-├── reviews/    # codex review 结果
-└── logs/       # 执行日志、中间产物
+├── plans/      # 分工计划、codex 出的方案、检查点
+├── reviews/    # codex/cc review 结果
+└── logs/       # 执行日志（每次多方协作完成后记录）
 ```
 
 ### 命名规范
