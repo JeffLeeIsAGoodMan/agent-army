@@ -158,10 +158,10 @@ agent-army/
 │   └── check-ai-usage/
 │       └── SKILL.md                 # 三方用量查看
 ├── docs/
-│   ├── concept.md                   # 多 Agent 调度体系思路（工具无关）
+│   ├── concept.md                   # 多 Agent 调度体系演进思路（工具无关）
 │   ├── test-scenarios.md            # 分工测试任务集（迭代验证用）
 │   ├── not-adopted.md               # 暂不采纳的建议留档
-│   └── roadmap.md                   # 演进路线图
+│   └── roadmap.md                   # 阶段任务与决策记录（维护用）
 └── _agent_work/                     # 协作中间文件（cc/codex 输出，本仓库保留实际示例）
     ├── context/                     # 上下文摘要
     ├── plans/                       # 分工计划、方案和检查点
@@ -193,6 +193,6 @@ bash install.sh
 
 ---
 
-## 演进路线图
+## 演进思路
 
-详见 [docs/roadmap.md](docs/roadmap.md)。
+从「一个大 Rule」到「Rule + Skill + `/army` + 协作文件 + 数据驱动外派 + 测试任务集 + 实测闭环」的取舍与弯路，按时间线写在 [docs/concept.md](docs/concept.md)。读完能对「为什么这样分层、什么时候该外派、怎么验证分工」有完整上下文。
